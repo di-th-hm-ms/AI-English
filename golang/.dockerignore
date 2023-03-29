@@ -1,0 +1,21 @@
+# Ignore Go binary files
+*.exe
+*.test
+*.prof
+*.out
+
+# Ignore vendor directory
+vendor/
+
+# Ignore configuration files
+.env
+config.toml
+
+# Ignore log files
+*.log
+
+# Ignore editors
+.idea/
+.vscode/
+*.swp
+*.swo
