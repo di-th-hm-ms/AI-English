@@ -1,14 +1,31 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/line/line-bot-sdk-go/linebot"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 )
+
+var bucket = "linenglish"
+
+// s3 region
+var awsRegion = "ap-northeast-1"
+
+var s3Client *s3.S3
 
 func main() {
 	bot, err := linebot.New(
@@ -19,6 +36,12 @@ func main() {
 		log.Fatal(err)
 	}
 	fmt.Println("Success creating a new instance for line bot")
+
+	// Initialize s3 client
+	CreateSession()
+
+	// Delete Bucket
+	// DeleteBucket()
 
 	router := gin.Default()
 
@@ -43,12 +66,15 @@ func main() {
 					if _, err = bot.ReplyMessage(event.ReplyToken, linebot.NewTextMessage(message.Text)).Do(); err != nil {
 						log.Print(err)
 					}
-				case *linebot.StickerMessage:
-					replyMessage := fmt.Sprintf(
-						"sticker id is %s, stickerResourceType is %s", message.StickerID, message.StickerResourceType)
-					if _, err = bot.ReplyMessage(event.ReplyToken, linebot.NewTextMessage(replyMessage)).Do(); err != nil {
-						log.Print(err)
+				case *linebot.ImageMessage:
+					key := fmt.Sprintf("images/%s/%s.jpg", event.Source.UserID, strconv.FormatInt(time.Now().UnixNano(), 10))
+
+					err := uploadImageToS3(bot, key, message, bucket)
+					if err != nil {
+						bot.ReplyMessage(event.ReplyToken, linebot.NewTextMessage("Error occured while uploading: "+err.Error())).Do()
 					}
+					bot.ReplyMessage(event.ReplyToken, linebot.NewTextMessage("Image uploaded successfully")).Do()
+
 				}
 			}
 		}
@@ -58,45 +84,60 @@ func main() {
 		port = "8080"
 	}
 	router.Run(":" + port)
-	// http.HandleFunc("/webhook", func(w http.ResponseWriter, req *http.Request) {
-	// 	log.Fatal("ping\n")
-	// 	events, err := bot.ParseRequest(req)
-	// 	if err != nil {
-	// 		if err == linebot.ErrInvalidSignature {
-	// 			w.WriteHeader(http.StatusBadRequest)
-	// 		} else {
-	// 			w.WriteHeader(http.StatusInternalServerError)
-	// 		}
-	// 		return
-	// 	}
-
-	// 	// manage events
-	// 	for _, e := range events {
-	// 		log.Fatal(e)
-	// 		// the event is to receive a message.
-	// 		if e.Type == linebot.EventTypeMessage {
-	// 			switch message := e.Message.(type) {
-	// 			// text event
-	// 			case *linebot.TextMessage:
-	// 				replyMessage := linebot.NewTextMessage(message.Text)
-	// 				log.Fatal(replyMessage)
-	// 				if _, err := bot.ReplyMessage(e.ReplyToken, replyMessage).Do(); err != nil {
-	// 					log.Fatal(err)
-	// 				}
-	// 			}
-	// 		}
-	// 	}
-
-	// 	w.WriteHeader(200)
-	// })
-
-	// port := os.Getenv("PORT")
-	// if port == "" {
-	// 	port = "8080"
-	// }
-
-	// fmt.Println(port)
-	// if err := http.ListenAndServe(":"+port, nil); err != nil {
-	// 	log.Fatal(err)
-	// }
 }
+
+func CreateSession() {
+
+	creds := credentials.NewStaticCredentials(os.Getenv("S3_ACCESS_KEY"), os.Getenv("S3_SECRET_ACCESS_KEY"), "")
+
+	sess, err := session.NewSession(&aws.Config{
+		Credentials: creds,
+		Region:      aws.String("ap-northeast-1")},
+	)
+	if err != nil {
+		log.Fatal("Fail to create a new session")
+	}
+	s3Client = s3.New(sess)
+	log.Println("complete!!")
+
+}
+
+func uploadImageToS3(bot *linebot.Client, key string, message *linebot.ImageMessage, bucketName string) error {
+	// Get image data from LINE Messaging API
+	response, err := bot.GetMessageContent(message.ID).WithContext(context.Background()).Do()
+	if err != nil {
+		return err
+	}
+	defer response.Content.Close()
+	imageBytes, err := io.ReadAll(response.Content)
+	if err != nil {
+		return err
+	}
+
+	// Upload image to S3
+	_, err = s3Client.PutObject(&s3.PutObjectInput{
+		Bucket:        aws.String(bucketName),
+		Key:           aws.String(key),
+		Body:          bytes.NewReader(imageBytes),
+		ContentType:   aws.String(http.DetectContentType(imageBytes)),
+		ContentLength: aws.Int64(int64(len(imageBytes))),
+		// ACL:           aws.String("public-read"),
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// func uploadImage() {
+// params := &s3.PutObjectInput{
+// 	Bucket: aws.String(bucket),
+// 	Key: aws.String(key),
+// 	Body: imageFile,
+// }
+
+// if _, err := s3Client.PutObject(params) {
+// 	log.Fatal()
+// }
+// }
