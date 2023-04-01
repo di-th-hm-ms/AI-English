@@ -1,4 +1,5 @@
 module github.com/di-th-hm-ms/AI-English
+// module AIEnglish/golang/src
 
 go 1.19
 
