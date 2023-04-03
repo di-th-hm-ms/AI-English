@@ -2,27 +2,22 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
-	"strconv"
-	"strings"
-	"time"
+
+	// "strconv"
+	// "time"
 
 	// "github.com/di-th-hm-ms/AI-English/lib"
 	// "AIEnglish/golang/src/lib"
 
+	"github.com/di-th-hm-ms/AI-English/lib"
 	"github.com/gin-gonic/gin"
 	"github.com/line/line-bot-sdk-go/linebot"
-
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
 )
 
 // openAI
@@ -64,17 +59,8 @@ type MsgData struct {
 
 const openaiURL = "https://api.openai.com/v1/chat/completions"
 
-var bucket = "linenglish"
-
-// s3 region
-var awsRegion = "ap-northeast-1"
-
-var s3Client *s3.S3
-
 // Including user's inpput and gpt's response
 var Conversation []Message
-
-var cnt = 0
 
 func main() {
 	bot, err := linebot.New(
@@ -86,8 +72,20 @@ func main() {
 	}
 	fmt.Println("Success creating a new instance for line bot")
 
+	// if err := lib.GetImagesFromPexels("apparently purpose clearly"); err != nil {
+	// 	log.Println(err)
+	// }
+	// log.Println("success")
+
 	// Initialize s3 client
-	CreateSession()
+	lib.CreateSession()
+	// urls := lib.ScrapeImages("apple", 1)
+	// if len(urls) > 0 {
+	// 	log.Println(urls[0])
+	// } else {
+	// 	log.Println("Failed to scrape")
+	// }
+	// return
 
 	router := gin.Default()
 
@@ -109,16 +107,17 @@ func main() {
 					log.Println(len(events))
 					log.Println(message.Text)
 
-					key := fmt.Sprintf("messages/%s/%s", event.Source.UserID, message.ID)
+					// key := fmt.Sprintf("messages/%s/%s", event.Source.UserID, message.ID)
+					key := fmt.Sprintf("users/%s/messages/%s", event.Source.UserID, message.Text)
 					// check if this message is duplicated and repeatedly sent.
-					if IsRepeated(key) {
+					if lib.IsRepeated(key) {
 						log.Println("repeated")
 						continue
 					}
 
 					// save userId and messageId into s3
 					data := fmt.Sprintf(`{userId: %s, messageId: %s}`, event.Source.UserID, message.ID)
-					SaveMessageIdsIntoS3(key, data)
+					lib.SaveMessageIdsIntoS3(key, data)
 
 					// ask openai of something
 					res, err := GetOpenaiChatResponse(message.Text)
@@ -126,20 +125,56 @@ func main() {
 					if err != nil || len(res.Choices) == 0 {
 						log.Println("an error during gpt api: " + err.Error())
 					} else if len(res.Choices) > 0 {
-						if _, err = bot.ReplyMessage(event.ReplyToken,
-							linebot.NewTextMessage(res.Choices[0].Messages.Content)).Do(); err != nil {
-							log.Println("an error while replying from LINE bot" + err.Error())
+
+						// Get images
+						// var photos []lib.Photo
+						// photos, err = lib.GetImagesFromPexels(message.Text)
+						// if err != nil {
+						// 	log.Println("an error while getting photos: " + err.Error())
+						// }
+
+						// Send images
+						// if len(photos) > 0 {
+						// key := fmt.Sprintf("images/%s/%s.jpg", event.Source.UserID, strconv.FormatInt(time.Now().UnixNano(), 10))
+						// download upload image(s) to s3
+						// uploadImageFromLineToS3(bot, key, )
+
+						// Todo - send multiply for paid users
+						// get presigned urls
+						presignedUrls := lib.ScrapeImages(message.Text, 1, event.Source.UserID)
+						if len(presignedUrls) > 0 {
+							if _, err := bot.ReplyMessage(event.ReplyToken,
+								linebot.NewImageMessage(presignedUrls[0], presignedUrls[0])).Do(); err != nil {
+								log.Println("an error while replying images from LINE bot" + err.Error())
+							}
 						}
+
+						// Send crash course
+						if _, err = bot.PushMessage(event.Source.UserID,
+							linebot.NewTextMessage(res.Choices[0].Messages.Content)).Do(); err != nil {
+							log.Println("an error while replying texts from LINE bot" + err.Error())
+						}
+						// save this replying data into s3
+						key = fmt.Sprintf("bots/users/%s/messages/%s", event.Source.UserID, message.Text)
+						lib.SaveMessageIdsIntoS3(key, res.Choices[0].Messages.Content)
 					}
+
+					// }
 
 				case *linebot.ImageMessage:
-					key := fmt.Sprintf("images/%s/%s.jpg", event.Source.UserID, strconv.FormatInt(time.Now().UnixNano(), 10))
+					// key := fmt.Sprintf("%s/images/%s.jpg", event.Source.UserID, strconv.FormatInt(time.Now().UnixNano(), 10))
+					// for both types of users
+					key := fmt.Sprintf("users/%s/imageMessages/%s", event.Source.UserID, message.ID)
+					data := fmt.Sprintf(`{userId: %s, messageId: %s}`, event.Source.UserID, message.ID)
+					lib.SaveMessageIdsIntoS3(key, data)
 
-					err := uploadImageToS3(bot, key, message)
-					if err != nil {
-						bot.ReplyMessage(event.ReplyToken, linebot.NewTextMessage("Error occured while uploading: "+err.Error())).Do()
-					}
-					bot.ReplyMessage(event.ReplyToken, linebot.NewTextMessage("Image uploaded successfully")).Do()
+					// for paid users
+
+					// err := lib.UploadImageFromMessageToS3(bot, key, message)
+					// if err != nil {
+					// 	bot.ReplyMessage(event.ReplyToken, linebot.NewTextMessage("Error occured while uploading: "+err.Error())).Do()
+					// }
+					// bot.ReplyMessage(event.ReplyToken, linebot.NewTextMessage("Image uploaded successfully")).Do()
 
 				}
 			}
@@ -152,78 +187,24 @@ func main() {
 	router.Run(":" + port)
 }
 
-func CreateSession() {
+// func uploadImageFromPexelsToS3(key string, ) {
 
-	creds := credentials.NewStaticCredentials(os.Getenv("S3_ACCESS_KEY"), os.Getenv("S3_SECRET_ACCESS_KEY"), "")
+// 	_, err = s3Client.PutObject(&s3.PutObjectInput{
+// 		Bucket:        aws.String(bucket),
+// 		Key:           aws.String(key),
+// 		Body:          bytes.NewReader(imageBytes),
+// 		ContentType:   aws.String(http.DetectContentType(imageBytes)),
+// 		ContentLength: aws.Int64(int64(len(imageBytes))),
+// 		// ACL:           aws.String("public-read"),
+// 	})
+// 	if err != nil {
+// 		return err
+// 	}
+// }
 
-	sess, err := session.NewSession(&aws.Config{
-		Credentials: creds,
-		Region:      aws.String("ap-northeast-1")},
-	)
-	if err != nil {
-		log.Fatal("Fail to create a new session")
-	}
-	s3Client = s3.New(sess)
-	log.Println("complete!!")
+// func getImagesFromS3() {
 
-}
-
-func uploadImageToS3(bot *linebot.Client, key string, message *linebot.ImageMessage) error {
-	// Get image data from LINE Messaging API
-	response, err := bot.GetMessageContent(message.ID).WithContext(context.Background()).Do()
-	if err != nil {
-		return err
-	}
-	defer response.Content.Close()
-	imageBytes, err := io.ReadAll(response.Content)
-	if err != nil {
-		return err
-	}
-
-	// Upload image to S3
-	_, err = s3Client.PutObject(&s3.PutObjectInput{
-		Bucket:        aws.String(bucket),
-		Key:           aws.String(key),
-		Body:          bytes.NewReader(imageBytes),
-		ContentType:   aws.String(http.DetectContentType(imageBytes)),
-		ContentLength: aws.Int64(int64(len(imageBytes))),
-		// ACL:           aws.String("public-read"),
-	})
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-/*
-*
-
-	These two methods below are for validation to check if the message is repeated
-	from LINE API.
-*/
-func SaveMessageIdsIntoS3(key string, data string) {
-	// body := []byte(data)
-	body := strings.NewReader(data)
-	// Upload the text data to S3
-	_, err := s3Client.PutObject(&s3.PutObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-		Body:   aws.ReadSeekCloser(body),
-	})
-	if err != nil {
-		log.Println("Failed to upload text data to S3", err)
-	}
-}
-
-// To check if the data is already on s3.
-func IsRepeated(key string) bool {
-	_, err := s3Client.GetObject(&s3.GetObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-	})
-	return err == nil
-}
+// }
 
 // Get the crash course to user's input.
 func GetOpenaiChatResponse(input string) (*OpenaiResponse, error) {
