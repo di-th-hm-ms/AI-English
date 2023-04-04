@@ -35,7 +35,7 @@ func CreateSession() {
 		log.Fatal("Fail to create a new session")
 	}
 	s3Client = s3.New(sess)
-	log.Println("complete!!")
+	log.Println("S3's connection works")
 
 }
 
