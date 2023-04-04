@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	// "strconv"
 	// "time"
@@ -63,6 +64,16 @@ const openaiURL = "https://api.openai.com/v1/chat/completions"
 var Conversation []Message
 
 func main() {
+	// set up log retention
+	maxAgeDays := 1
+	go func() {
+		ticker := time.Tick(24 * time.Hour)
+		for range ticker {
+			if err := lib.DeleteOldLogs(lib.LogDir, maxAgeDays); err != nil {
+				log.Println("Error deleting old log files:", err)
+			}
+		}
+	}()
 	bot, err := linebot.New(
 		os.Getenv("CHANNEL_SECRET"),
 		os.Getenv("CHANNEL_ACCESS_TOKEN"),
@@ -72,30 +83,27 @@ func main() {
 	}
 	fmt.Println("Success creating a new instance for line bot")
 
-	// if err := lib.GetImagesFromPexels("apparently purpose clearly"); err != nil {
-	// 	log.Println(err)
-	// }
-	// log.Println("success")
-
 	// Initialize s3 client
 	lib.CreateSession()
-	// urls := lib.ScrapeImages("apple", 1)
-	// if len(urls) > 0 {
-	// 	log.Println(urls[0])
-	// } else {
-	// 	log.Println("Failed to scrape")
-	// }
-	// return
 
 	router := gin.Default()
 
 	router.POST("/callback", func(c *gin.Context) {
+
+		// validation to limit the scope where http requests are accepted
+		lib.WebhookHandler(c, bot)
+
+		// return
 		events, err := bot.ParseRequest(c.Request)
+		defer c.Request.Body.Close()
+
 		if err != nil {
 			if err == linebot.ErrInvalidSignature {
 				c.Writer.WriteHeader(400)
+				lib.LogWebhookInfo(c, 400)
 			} else {
 				c.Writer.WriteHeader(500)
+				lib.LogWebhookInfo(c, 500)
 			}
 			return
 		}
@@ -125,19 +133,6 @@ func main() {
 					if err != nil || len(res.Choices) == 0 {
 						log.Println("an error during gpt api: " + err.Error())
 					} else if len(res.Choices) > 0 {
-
-						// Get images
-						// var photos []lib.Photo
-						// photos, err = lib.GetImagesFromPexels(message.Text)
-						// if err != nil {
-						// 	log.Println("an error while getting photos: " + err.Error())
-						// }
-
-						// Send images
-						// if len(photos) > 0 {
-						// key := fmt.Sprintf("images/%s/%s.jpg", event.Source.UserID, strconv.FormatInt(time.Now().UnixNano(), 10))
-						// download upload image(s) to s3
-						// uploadImageFromLineToS3(bot, key, )
 
 						// Todo - send multiply for paid users
 						// get presigned urls
@@ -179,6 +174,9 @@ func main() {
 				}
 			}
 		}
+
+		c.Status(http.StatusOK)
+		lib.LogWebhookInfo(c, http.StatusOK)
 	})
 	port := os.Getenv("PORT")
 	if port == "" {
