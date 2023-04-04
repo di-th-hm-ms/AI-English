@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	// "strconv"
@@ -75,6 +76,29 @@ func main() {
 						log.Println("repeated")
 						continue
 					}
+
+					// Check that this user already used three times
+					prefix := fmt.Sprintf("users/%s/messages/", "Uf6cb53879191dc7713c28ad7d18bc9d5")
+					todaysCnt, err := lib.CheckThreeTimes(prefix)
+					if err != nil {
+						log.Println("failed to check for this reason: ", err.Error())
+
+						// emergency reply
+
+						if _, err = bot.ReplyMessage(event.ReplyToken,
+							linebot.NewTextMessage("Sorry, we're under maintenance. Try it later.")).Do(); err != nil {
+							log.Println("Failed to reply about a maximum limit warning: ", err.Error())
+						}
+						continue
+					}
+					if todaysCnt >= 3 {
+						if _, err = bot.ReplyMessage(event.ReplyToken,
+							linebot.NewTextMessage("Free users are limited to up to 3 requests per day! Please pay to extend the limit or wait until tomorrow or b")).Do(); err != nil {
+							log.Println("Failed to reply about a maximum limit warning: ", err.Error())
+						}
+						continue
+					}
+					log.Println("cnt: " + strconv.Itoa(todaysCnt))
 
 					// save userId and messageId into s3
 					data := fmt.Sprintf(`{userId: %s, messageId: %s}`, event.Source.UserID, message.ID)

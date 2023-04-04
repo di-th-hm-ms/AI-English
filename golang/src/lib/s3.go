@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -128,11 +129,58 @@ func UploadImage(url string, key string) error {
 }
 
 func DeleteAll() {
-	_, err := s3Client.DeleteObjects(&s3.DeleteObjectsInput{
+
+	// Call the ListObjectsV2 API to get a list of all objects in the bucket
+	res, err := s3Client.ListObjectsV2(&s3.ListObjectsV2Input{
 		Bucket: aws.String(bucket),
+	})
+
+	// Create a slice to store object keys
+	var objKeys []*s3.ObjectIdentifier
+
+	for _, obj := range res.Contents {
+		objKeys = append(objKeys, &s3.ObjectIdentifier{
+			Key: obj.Key,
+		})
+	}
+
+	if len(objKeys) == 0 {
+		log.Println("no objects found in bucket")
+	}
+	_, err = s3Client.DeleteObjects(&s3.DeleteObjectsInput{
+		Bucket: aws.String(bucket),
+		Delete: &s3.Delete{
+			Objects: objKeys,
+		},
 	})
 	if err != nil {
 		log.Println("failed to delete obs")
 	}
 
+}
+
+// check if this user already used this system three times
+func CheckThreeTimes(prefix string) (int, error) {
+
+	today := time.Now().Truncate(24 * time.Hour)
+	// endTime := startTime.Add(24 * time.Hour)
+
+	res, err := s3Client.ListObjectsV2(&s3.ListObjectsV2Input{
+		Bucket: aws.String(bucket),
+		Prefix: aws.String(prefix),
+	})
+	if err != nil {
+		return 0, err
+	}
+	// todaysObjects := make([]*s3.Object, 0)
+	todaysCnt := 0
+	for _, object := range res.Contents {
+		if object.LastModified.After(today) {
+			// todaysObjects = append(todaysObjects, object)
+			todaysCnt++
+			// log.Println(aws.StringValue(object.Key))
+		}
+	}
+
+	return todaysCnt, nil
 }
