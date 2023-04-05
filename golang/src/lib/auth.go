@@ -16,9 +16,15 @@ import (
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
+	"github.com/line/line-bot-sdk-go/linebot"
 )
 
 // To generate new access token with JWT assertion
+
+type LineBot struct {
+	Client      *linebot.Client
+	AccessToken string
+}
 
 // To generate JWT assertion
 var privateKeyJSON = []byte(fmt.Sprintf(`{
@@ -120,12 +126,6 @@ func GenerateJwtAssertion() (string, error) {
 
 	token.Header["kid"] = os.Getenv("PH_KID")
 
-	// headers := map[string]interface{}{
-	// 	"alg": os.Getenv("ALG"),
-	// 	"typ": os.Getenv("PH_TYP"),
-	// 	"kid": os.Getenv("PH_KID"),
-	// }
-
 	jwtString, err := token.SignedString(privateKey)
 	if err != nil {
 		log.Println("while signing")
@@ -137,8 +137,6 @@ func GenerateJwtAssertion() (string, error) {
 
 // Generate a new access token and register it to LINE server
 func GetNewAccessToken() (string, error) {
-	// channelID := os.Getenv("LINE_CHANNEL_ID")
-	// channelSecret := os.Getenv("LINE_CHANNEL_SECRET")
 
 	jwtAssertion, err := GenerateJwtAssertion()
 	if err != nil {
@@ -218,3 +216,31 @@ func VerifyAccessToken(accessToken string) (map[string]interface{}, error) {
 // revoke the access token
 
 // Update the access token not in .env but in struct
+func NewLineBotClient() *LineBot {
+	secret := os.Getenv("CHANNEL_SECRET")
+
+	accessToken, err := GetNewAccessToken()
+	if err != nil {
+		log.Println("error while generating a new access token: " + err.Error())
+	}
+
+	bot, err := linebot.New(secret, accessToken)
+	if err != nil {
+		// gets this server down temporarily
+		log.Fatalf("Failed to create LINE bot client: %v", err)
+	}
+
+	return &LineBot{
+		Client:      bot,
+		AccessToken: accessToken,
+	}
+}
+
+// refresh an access token periodically
+func RefreshTokenPeriodically(bot *LineBot, interval time.Duration) {
+	for {
+		time.Sleep(interval)
+		bot = NewLineBotClient()
+		log.Println(bot.AccessToken)
+	}
+}

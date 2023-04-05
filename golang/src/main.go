@@ -16,6 +16,8 @@ import (
 	"github.com/line/line-bot-sdk-go/linebot"
 )
 
+var bot *lib.LineBot
+
 func main() {
 	// set up log retention
 	maxAgeDays := 1
@@ -27,47 +29,24 @@ func main() {
 			}
 		}
 	}()
-	bot, err := linebot.New(
-		os.Getenv("CHANNEL_SECRET"),
-		os.Getenv("CHANNEL_ACCESS_TOKEN"),
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
+
+	// Create a new client for messaging API
+	bot = lib.NewLineBotClient()
 	fmt.Println("Success creating a new instance for line bot")
 
 	// Initialize s3 client
 	lib.CreateSession()
 
-	// generate
-	// token, err := lib.GetNewAccessToken()
-	// if err != nil {
-	// 	log.Println("errorrrr: " + err.Error())
-	// 	return
-	// }
-	// log.Println("success to get a new token: " + token)
-	// verify
-	at := ""
-	verificationResult, err := lib.VerifyAccessToken(at)
-	if err != nil {
-		log.Println("error while verifying token: " + err.Error())
-		return
-	}
-	// delete
-	// Rewrite config or something like that
-
-	fmt.Println("Verification Result:", verificationResult)
-	return
 	router := gin.Default()
 
 	router.POST("/callback", func(c *gin.Context) {
 
 		log.Println("callback is called")
 		// validation to limit the scope where http requests are accepted
-		lib.WebhookHandler(c, bot)
+		lib.WebhookHandler(c, bot.Client)
 
 		// return
-		events, err := bot.ParseRequest(c.Request)
+		events, err := bot.Client.ParseRequest(c.Request)
 		defer c.Request.Body.Close()
 
 		if err != nil {
@@ -104,14 +83,14 @@ func main() {
 
 						// emergency reply
 
-						if _, err = bot.ReplyMessage(event.ReplyToken,
+						if _, err = bot.Client.ReplyMessage(event.ReplyToken,
 							linebot.NewTextMessage("Sorry, we're under maintenance. Try it later.")).Do(); err != nil {
 							log.Println("Failed to reply about a maximum limit warning: ", err.Error())
 						}
 						continue
 					}
 					if todaysCnt >= 3 {
-						if _, err = bot.ReplyMessage(event.ReplyToken,
+						if _, err = bot.Client.ReplyMessage(event.ReplyToken,
 							linebot.NewTextMessage("Free users are limited to up to 3 requests per day! Please pay to extend the limit or wait until tomorrow or b")).Do(); err != nil {
 							log.Println("Failed to reply about a maximum limit warning: ", err.Error())
 						}
@@ -134,14 +113,14 @@ func main() {
 						// get presigned urls
 						presignedUrls := lib.ScrapeImages(message.Text, 1, event.Source.UserID)
 						if len(presignedUrls) > 0 {
-							if _, err := bot.ReplyMessage(event.ReplyToken,
+							if _, err := bot.Client.ReplyMessage(event.ReplyToken,
 								linebot.NewImageMessage(presignedUrls[0], presignedUrls[0])).Do(); err != nil {
 								log.Println("an error while replying images from LINE bot" + err.Error())
 							}
 						}
 
 						// Send crash course
-						if _, err = bot.PushMessage(event.Source.UserID,
+						if _, err = bot.Client.PushMessage(event.Source.UserID,
 							linebot.NewTextMessage(res.Choices[0].Messages.Content)).Do(); err != nil {
 							log.Println("an error while replying texts from LINE bot" + err.Error())
 						}
@@ -153,7 +132,6 @@ func main() {
 					// }
 
 				case *linebot.ImageMessage:
-					// key := fmt.Sprintf("%s/images/%s.jpg", event.Source.UserID, strconv.FormatInt(time.Now().UnixNano(), 10))
 					// for both types of users
 					key := fmt.Sprintf("users/%s/imageMessages/%s", event.Source.UserID, message.ID)
 					data := fmt.Sprintf(`{userId: %s, messageId: %s}`, event.Source.UserID, message.ID)
@@ -174,6 +152,9 @@ func main() {
 		c.Status(http.StatusOK)
 		lib.LogWebhookInfo(c, http.StatusOK)
 	})
+
+	go lib.RefreshTokenPeriodically(bot, time.Hour)
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
