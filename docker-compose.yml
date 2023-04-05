@@ -13,6 +13,18 @@ services:
       - S3_SECRET_ACCESS_KEY
       - GPT_KEY
       - PEXELS_API_KEY
+      - P_ALG
+      - P_D
+      - P_DP
+      - P_DQ
+      - P_E
+      - P_KTY
+      - P_N
+      - P_P
+      - P_Q
+      - P_QI
+      - PH_TYP
+      - PH_KID
     ports:
       - 8080:8080
       # - 8081:8081

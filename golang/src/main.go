@@ -39,6 +39,25 @@ func main() {
 	// Initialize s3 client
 	lib.CreateSession()
 
+	// generate
+	// token, err := lib.GetNewAccessToken()
+	// if err != nil {
+	// 	log.Println("errorrrr: " + err.Error())
+	// 	return
+	// }
+	// log.Println("success to get a new token: " + token)
+	// verify
+	at := ""
+	verificationResult, err := lib.VerifyAccessToken(at)
+	if err != nil {
+		log.Println("error while verifying token: " + err.Error())
+		return
+	}
+	// delete
+	// Rewrite config or something like that
+
+	fmt.Println("Verification Result:", verificationResult)
+	return
 	router := gin.Default()
 
 	router.POST("/callback", func(c *gin.Context) {
