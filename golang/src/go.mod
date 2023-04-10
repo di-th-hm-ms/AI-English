@@ -6,6 +6,7 @@ go 1.19
 
 require (
 	github.com/aws/aws-sdk-go v1.44.232
+	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/gin-gonic/gin v1.9.0
 	github.com/gocolly/colly/v2 v2.1.0
 	github.com/line/line-bot-sdk-go v7.8.0+incompatible
