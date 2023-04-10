@@ -16,7 +16,7 @@ import (
 
 const (
 	LogDir  = "logs"
-	LogFile = "webhook_logs.txt"
+	LogFile = "webhook_logs"
 )
 
 func LogWebhookInfo(c *gin.Context, statusCode int) {
@@ -26,8 +26,13 @@ func LogWebhookInfo(c *gin.Context, statusCode int) {
 		log.Println("Error creating log directory:", err)
 		return
 	}
+
+	// Generate log file name based on the current date
+	currentDate := time.Now().Format("2006-01-02")
+	logFileName := fmt.Sprintf("%s-%s.log", LogFile, currentDate)
+
 	// Open the log file for appending, create it if it doesn't exist
-	filePath := filepath.Join(LogDir, LogFile)
+	filePath := filepath.Join(LogDir, logFileName)
 	file, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Println("Error opening log file:", err)
