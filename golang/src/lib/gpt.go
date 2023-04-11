@@ -56,9 +56,10 @@ func GetOpenaiChatResponse(input string) (*OpenaiResponse, error) {
 	apiKey := os.Getenv("GPT_KEY")
 	Conversation = append(Conversation, Message{
 		Role: "user",
-		Content: `Teach me the meaning of the next word and show me
-		 couple of short conversations including as many as phrasal verbs, 
-		 slangs and the next word in the conversations. "` + input + `"`,
+		// Content: `Teach me the meaning of the next word and show me
+		//  couple of short conversations including as many as phrasal verbs,
+		//  slangs and the next word in the conversations. "` + input + `"`,
+		Content: `Let me know the meaning about ` + input + ` concisely without any extra explanations`,
 	})
 	reqBody := OpenaiRequest{
 		Model:    "gpt-3.5-turbo",

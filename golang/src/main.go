@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -18,6 +19,8 @@ import (
 
 var bot *lib.LineBot
 
+var userId = ""
+
 func main() {
 	// set up log retention
 	maxAgeDays := 1
@@ -31,7 +34,18 @@ func main() {
 	}()
 
 	// Create a new client for messaging API
-	bot = lib.NewLineBotClient()
+	// bot = lib.NewLineBotClient()
+	// for debug
+	lbot, err := linebot.New(os.Getenv("CHANNEL_SECRET"), "")
+	if err != nil {
+		// gets this server down temporarily
+		log.Fatalf("Failed to create LINE bot client: %v", err)
+	}
+
+	bot := &lib.LineBot{
+		Client:      lbot,
+		AccessToken: "",
+	}
 	fmt.Println("Success creating a new instance for line bot")
 
 	// Initialize s3 client
@@ -67,29 +81,69 @@ func main() {
 					log.Println(len(events))
 					log.Println(message.Text)
 
+					// clean up the input
+					sanitizedText, isSanitized := lib.IsEnglishSentence(lib.RemoveExtraSpace(message.Text))
+					if !isSanitized {
+						if _, err = bot.Client.ReplyMessage(event.ReplyToken,
+							linebot.NewTextMessage("Don't use invalid characters. You can only use english, '.', ',' or space")).Do(); err != nil {
+							if _, err = bot.Client.ReplyMessage(event.ReplyToken,
+								linebot.NewTextMessage("Sorry, we're under maintenance. Try it later.")).Do(); err != nil {
+							}
+						}
+					}
+					log.Println("sanitized")
+					log.Println(sanitizedText)
+
+					key := fmt.Sprintf("users/%s/messages/%s", event.Source.UserID, sanitizedText)
+
 					// key := fmt.Sprintf("messages/%s/%s", event.Source.UserID, message.ID)
-					key := fmt.Sprintf("users/%s/messages/%s", event.Source.UserID, message.Text)
 					// check if this message is duplicated and repeatedly sent.
-					if lib.IsRepeated(key) {
+					if _, isRepeated := lib.GetMessage(key); isRepeated {
 						log.Println("repeated")
+						botKey := fmt.Sprintf("bots/users/%s/messages/%s", event.Source.UserID, sanitizedText)
+						// get past data from s3 to reply
+						if content, exists := lib.GetMessage(botKey); exists {
+
+							// send the image retrived from s3 to run efficiently
+							imageKey := fmt.Sprintf("bots/users/%s/images/%s", event.Source.UserID, sanitizedText)
+							urls := make([]string, 0)
+							urls = append(urls, lib.GeneratePresignedUrl(imageKey))
+							// reply images
+							err = replyPresignedUrl(bot, event, urls)
+							// send the past data retrived from s3 to save the cost of gpt
+							// To avoid sending messages without user's input due to repeated same requests from LINE server
+							if err == nil {
+								if _, err = bot.Client.PushMessage(event.Source.UserID,
+									linebot.NewTextMessage(string(content))).Do(); err != nil {
+									log.Println("Failed to reply a past post: ", err.Error())
+								}
+								recordUserMessage(event, key, message.ID)
+							}
+
+						} else if _, err = bot.Client.ReplyMessage(event.ReplyToken,
+							linebot.NewTextMessage("Sorry, we're in trouble. Wait a moment to recover.")).Do(); err != nil {
+							log.Println("Internal server error while replying against repeated request.")
+						}
 						continue
 					}
 
+					// save userId and messageId into s3
+					recordUserMessage(event, key, message.ID)
 					// Check that this user already used three times
-					prefix := fmt.Sprintf("users/%s/messages/", "Uf6cb53879191dc7713c28ad7d18bc9d5")
+					prefix := fmt.Sprintf("users/%s/messages/", userId)
 					todaysCnt, err := lib.CheckThreeTimes(prefix)
 					if err != nil {
 						log.Println("failed to check for this reason: ", err.Error())
 
 						// emergency reply
-
 						if _, err = bot.Client.ReplyMessage(event.ReplyToken,
 							linebot.NewTextMessage("Sorry, we're under maintenance. Try it later.")).Do(); err != nil {
 							log.Println("Failed to reply about a maximum limit warning: ", err.Error())
 						}
 						continue
 					}
-					if todaysCnt >= 3 {
+					log.Println(todaysCnt)
+					if todaysCnt >= 15 {
 						if _, err = bot.Client.ReplyMessage(event.ReplyToken,
 							linebot.NewTextMessage("Free users are limited to up to 3 requests per day! Please pay to extend the limit or wait until tomorrow or b")).Do(); err != nil {
 							log.Println("Failed to reply about a maximum limit warning: ", err.Error())
@@ -98,26 +152,32 @@ func main() {
 					}
 					log.Println("cnt: " + strconv.Itoa(todaysCnt))
 
-					// save userId and messageId into s3
-					data := fmt.Sprintf(`{userId: %s, messageId: %s}`, event.Source.UserID, message.ID)
-					lib.SaveMessageIdsIntoS3(key, data)
-
 					// ask openai of something
-					res, err := lib.GetOpenaiChatResponse(message.Text)
+					res, err := lib.GetOpenaiChatResponse(sanitizedText)
 					// var resStr string // Actual respoonse
 					if err != nil || len(res.Choices) == 0 {
 						log.Println("an error during gpt api: " + err.Error())
+						// delete message data the user sent from s3 because it has no reply
+						lib.DeleteObject(key)
+						// Reply an error message to the user
+						if _, err := bot.Client.ReplyMessage(event.ReplyToken,
+							linebot.NewTextMessage("Sorry, we're in trouble. Wait for recovery.")).Do(); err != nil {
+							log.Println("an error while replying an error message from LINE bot" + err.Error())
+						}
+
 					} else if len(res.Choices) > 0 {
 
 						// Todo - send multiply for paid users
-						// get presigned urls
-						presignedUrls := lib.ScrapeImages(message.Text, 1, event.Source.UserID)
-						if len(presignedUrls) > 0 {
-							if _, err := bot.Client.ReplyMessage(event.ReplyToken,
-								linebot.NewImageMessage(presignedUrls[0], presignedUrls[0])).Do(); err != nil {
-								log.Println("an error while replying images from LINE bot" + err.Error())
-							}
-						}
+						// get presigned urls for LINE server to get an access to s3
+						// presignedUrls := lib.ScrapeImages(sanitizedText, 1, event.Source.UserID)
+						// if len(presignedUrls) > 0 {
+						// 	if _, err := bot.Client.ReplyMessage(event.ReplyToken,
+						// 		linebot.NewImageMessage(presignedUrls[0], presignedUrls[0])).Do(); err != nil {
+						// 		log.Println("an error while replying images from LINE bot" + err.Error())
+						// 	}
+						// }
+						presignedUrls := lib.ScrapeImages(sanitizedText, 1, event.Source.UserID)
+						replyPresignedUrl(bot, event, presignedUrls)
 
 						// Send crash course
 						if _, err = bot.Client.PushMessage(event.Source.UserID,
@@ -125,7 +185,7 @@ func main() {
 							log.Println("an error while replying texts from LINE bot" + err.Error())
 						}
 						// save this replying data into s3
-						key = fmt.Sprintf("bots/users/%s/messages/%s", event.Source.UserID, message.Text)
+						key = fmt.Sprintf("bots/users/%s/messages/%s", event.Source.UserID, sanitizedText)
 						lib.SaveMessageIdsIntoS3(key, res.Choices[0].Messages.Content)
 					}
 
@@ -160,4 +220,29 @@ func main() {
 		port = "8080"
 	}
 	router.Run(":" + port)
+}
+
+func replyPresignedUrl(bot *lib.LineBot, event *linebot.Event, presignedUrls []string) error {
+	if len(presignedUrls) > 0 {
+		log.Println(event.ReplyToken)
+		log.Println(presignedUrls)
+		log.Println(bot.Client)
+		if presignedUrls[0] == "" {
+			presignedUrls[0] = "https://noimage.com"
+			if _, err := bot.Client.ReplyMessage(event.ReplyToken,
+				linebot.NewImageMessage(presignedUrls[0], presignedUrls[0])).Do(); err != nil {
+				return errors.New("an error while replying images from LINE bot" + err.Error())
+			}
+		} else if _, err := bot.Client.ReplyMessage(event.ReplyToken,
+			linebot.NewImageMessage(presignedUrls[0], presignedUrls[0])).Do(); err != nil {
+			return errors.New("an error while replying images from LINE bot" + err.Error())
+		}
+	}
+	return nil
+}
+
+func recordUserMessage(event *linebot.Event, key string, id string) {
+	// save userId and messageId into s3
+	data := fmt.Sprintf(`{userId: %s, messageId: %s}`, event.Source.UserID, id)
+	lib.SaveMessageIdsIntoS3(key, data)
 }
