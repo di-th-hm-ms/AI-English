@@ -116,9 +116,11 @@ func GenerateJwtAssertion() (string, error) {
 		},
 	}
 
+	// pId := 1660802481
+	id := os.Getenv("CHANNEL_ID")
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"iss":       "1660802481",
-		"sub":       "1660802481",
+		"iss":       id,
+		"sub":       id,
 		"aud":       "https://api.line.me/",
 		"exp":       time.Now().Add(30 * time.Minute).Unix(), //The expiration time of the JWT.
 		"token_exp": 60 * 60 * 24 * 30,                       // This represents a valid expiration time for the channel access token in seconds.
