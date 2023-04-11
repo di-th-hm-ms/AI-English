@@ -4,10 +4,9 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
+	// "github.com/aws/aws-sdk-go/aws"
+	// "github.com/aws/aws-sdk-go/service/s3"
 	"github.com/gocolly/colly/v2"
 )
 
@@ -41,19 +40,7 @@ func ScrapeImages(keyword string, desiredNumImages int, userId string) []string 
 				// comprehesiveErr = err
 			}
 
-			// Generate a presigned URL for the image
-			req, _ := s3Client.GetObjectRequest(&s3.GetObjectInput{
-				Bucket: aws.String(bucket),
-				Key:    aws.String(key),
-			})
-
-			url, err := req.Presign(5 * time.Minute)
-			if err != nil {
-				log.Println("Failed to generate presigned URL", err)
-				return
-			}
-
-			log.Println("presigned url: " + url)
+			url := GeneratePresignedUrl(key)
 			presignedUrls = append(presignedUrls, url)
 
 			imgCounter++

@@ -3,6 +3,7 @@ package lib
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -61,12 +62,24 @@ func SaveMessageIdsIntoS3(key string, data string) {
 }
 
 // To check if the data is already on s3.
-func IsRepeated(key string) bool {
-	_, err := s3Client.GetObject(&s3.GetObjectInput{
+func GetMessage(key string) ([]byte, bool) {
+	res, err := s3Client.GetObject(&s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 	})
-	return err == nil
+
+	if err != nil {
+		log.Println("failed to read object content: " + err.Error())
+		return nil, false
+	}
+	// Read object content
+	content, err := io.ReadAll(res.Body)
+	if err != nil {
+		log.Println("failed to parse data from s3: " + err.Error())
+		return nil, false
+	}
+	return content, true
+
 }
 
 func UploadImageFromMessageToS3(bot *linebot.Client, key string, message *linebot.ImageMessage) error {
@@ -159,6 +172,28 @@ func DeleteAll() {
 
 }
 
+func DeleteObject(key string) error {
+	// Delete the object
+	_, err := s3Client.DeleteObject(&s3.DeleteObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return errors.New("failed to delete object: " + err.Error())
+	}
+
+	// Confirm if the object was deleted
+	err = s3Client.WaitUntilObjectNotExists(&s3.HeadObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return errors.New("failed to confirm object deletion: " + err.Error())
+	}
+
+	return nil
+}
+
 // check if this user already used this system three times
 func CheckThreeTimes(prefix string) (int, error) {
 
@@ -183,4 +218,21 @@ func CheckThreeTimes(prefix string) (int, error) {
 	}
 
 	return todaysCnt, nil
+}
+
+func GeneratePresignedUrl(key string) string {
+	// Generate a presigned URL for the image
+	req, _ := s3Client.GetObjectRequest(&s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+
+	url, err := req.Presign(5 * time.Minute)
+	if err != nil {
+		log.Println("Failed to generate presigned URL", err)
+		return ""
+	}
+
+	log.Println("presigned url: " + url)
+	return url
 }
