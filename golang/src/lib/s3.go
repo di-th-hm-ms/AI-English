@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -13,8 +14,10 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/sts"
 	"github.com/line/line-bot-sdk-go/linebot"
 )
 
@@ -25,9 +28,80 @@ var awsRegion = "ap-northeast-1"
 
 var s3Client *s3.S3
 
+// take or begin to have power for role
+func assumeRole(roleArn, externalId string) (*sts.Credentials, error) {
+	sess := session.Must(session.NewSession())
+	stsClient := sts.New(sess)
+
+	params := &sts.AssumeRoleInput{
+		RoleArn:         aws.String(roleArn),
+		RoleSessionName: aws.String("linenglish"),
+		ExternalId:      aws.String(externalId),
+		DurationSeconds: aws.Int64(3600),
+	}
+
+	res, err := stsClient.AssumeRole(params)
+	if err != nil {
+		return nil, err
+	}
+
+	return res.Credentials, nil
+}
+func CreateSessionWithRole() {
+	roleName := os.Getenv("IAM_ROLE_NAME")
+	roleId := os.Getenv("IAM_ROLE_ID")
+	log.Println(roleName)
+	log.Println(roleId)
+	roleArn := fmt.Sprintf("arn:aws:iam::%s:role/%s", roleId, roleName)
+	externalID := "1234"
+
+	// Initially take a power for role.
+	creds, err := assumeRole(roleArn, externalID)
+	if err != nil {
+		log.Printf("Failed to assume role: %v\n", err)
+		return
+	}
+
+	// create a temporary session
+	sess := session.Must(session.NewSession(&aws.Config{
+		Credentials: credentials.NewStaticCredentials(
+			*creds.AccessKeyId,
+			*creds.SecretAccessKey,
+			*creds.SessionToken,
+		),
+	}))
+	s3Client = s3.New(sess)
+
+	// start a goroutine to refresh credentials periodically
+	go refreshCredentialsPeriodically(roleArn, externalID, sess)
+}
+
+func refreshCredentialsPeriodically(roleArn, externalId string, sess *session.Session) {
+	for {
+		creds, err := assumeRole(roleArn, externalId)
+		if err != nil {
+			log.Printf("Failed to assume role: %v\n", err)
+		} else {
+			exp := aws.TimeValue(creds.Expiration)
+			log.Printf("Assumed role successfully. Credentials expire at %v\n", exp)
+
+			// update session with new credentials
+			sess.Config.Credentials = stscreds.NewCredentials(sess, roleArn,
+				func(arp *stscreds.AssumeRoleProvider) {
+					arp.ExternalID = aws.String(externalId)
+				})
+			// leave s3client as it is
+
+			// Sleep for a duration before refreshing credentials again
+			sleepDuration := time.Until(exp.Add(-10 * time.Minute))
+			time.Sleep(sleepDuration)
+		}
+	}
+}
+
 func CreateSession() {
 
-	creds := credentials.NewStaticCredentials(os.Getenv("S3_ACCESS_KEY"), os.Getenv("S3_SECRET_ACCESS_KEY"), "")
+	creds := credentials.NewStaticCredentials(os.Getenv("AWS_ACCESS_KEY_ID"), os.Getenv("AWS_SECRET_ACCESS_KEY"), "")
 
 	sess, err := session.NewSession(&aws.Config{
 		Credentials: creds,
