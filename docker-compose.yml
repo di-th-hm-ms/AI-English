@@ -9,8 +9,10 @@ services:
     environment:
       - CHANNEL_ID
       - CHANNEL_SECRET
-      - S3_ACCESS_KEY
-      - S3_SECRET_ACCESS_KEY
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - IAM_ROLE_NAME
+      - IAM_ROLE_ID
       - GPT_KEY
       - PEXELS_API_KEY
       - P_ALG
@@ -25,6 +27,7 @@ services:
       - P_QI
       - PH_TYP
       - PH_KID
+      - PRODUCTION
     ports:
       - 8080:8080
       # - 8081:8081

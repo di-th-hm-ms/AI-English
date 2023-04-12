@@ -21,6 +21,12 @@ var bot *lib.LineBot
 
 var userId = ""
 
+type Job struct {
+	ID     string
+	UserID string
+	Data   string
+}
+
 func main() {
 	// set up log retention
 	maxAgeDays := 1
@@ -49,7 +55,11 @@ func main() {
 	fmt.Println("Success creating a new instance for line bot")
 
 	// Initialize s3 client
-	lib.CreateSession()
+	if os.Getenv("PRODUCTION") == "yes" {
+		lib.CreateSessionWithRole()
+	} else {
+		lib.CreateSession()
+	}
 
 	router := gin.Default()
 
