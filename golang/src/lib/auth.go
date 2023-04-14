@@ -26,6 +26,8 @@ type LineBot struct {
 	AccessToken string
 }
 
+var bot *LineBot
+
 // To generate JWT assertion
 var privateKeyJSON = []byte(fmt.Sprintf(`{
 	"alg": "%s",
@@ -218,7 +220,7 @@ func VerifyAccessToken(accessToken string) (map[string]interface{}, error) {
 // revoke the access token
 
 // Update the access token not in .env but in struct
-func NewLineBotClient() *LineBot {
+func NewLineBotClient() {
 	secret := os.Getenv("CHANNEL_SECRET")
 
 	accessToken, err := GetNewAccessToken()
@@ -226,23 +228,41 @@ func NewLineBotClient() *LineBot {
 		log.Println("error while generating a new access token: " + err.Error())
 	}
 
-	bot, err := linebot.New(secret, accessToken)
+	lbot, err := linebot.New(secret, accessToken)
 	if err != nil {
 		// gets this server down temporarily
 		log.Fatalf("Failed to create LINE bot client: %v", err)
 	}
 
-	return &LineBot{
-		Client:      bot,
+	bot = &LineBot{
+		Client:      lbot,
 		AccessToken: accessToken,
 	}
 }
 
 // refresh an access token periodically
-func RefreshTokenPeriodically(bot *LineBot, interval time.Duration) {
+func RefreshTokenPeriodically(interval time.Duration) {
 	for {
 		time.Sleep(interval)
-		bot = NewLineBotClient()
+		NewLineBotClient()
 		log.Println(bot.AccessToken)
 	}
+}
+
+// for debug
+func InitializeLinebotDebug() {
+	lbot, err := linebot.New(os.Getenv("CHANNEL_SECRET"), os.Getenv("CHANNEL_LONG_TERM_ACCESS_TOKEN"))
+	if err != nil {
+		// gets this server down temporarily
+		log.Fatalf("Failed to create LINE bot client: %v", err)
+	}
+
+	bot = &LineBot{
+		Client:      lbot,
+		AccessToken: os.Getenv("CHANNEL_LONG_TERM_ACCESS_TOKEN"),
+	}
+}
+
+func GetBot() *LineBot {
+	return bot
 }
