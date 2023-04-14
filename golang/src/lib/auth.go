@@ -26,6 +26,8 @@ type LineBot struct {
 	AccessToken string
 }
 
+var bot *LineBot
+
 // To generate JWT assertion
 var privateKeyJSON = []byte(fmt.Sprintf(`{
 	"alg": "%s",
@@ -245,4 +247,22 @@ func RefreshTokenPeriodically(bot *LineBot, interval time.Duration) {
 		bot = NewLineBotClient()
 		log.Println(bot.AccessToken)
 	}
+}
+
+// for debug
+func InitializeLinebotDebug() {
+	lbot, err := linebot.New(os.Getenv("CHANNEL_SECRET"), "KD0gyMj2tlmgrf7sqvlVrsVS4QBKKIeKYfpaV4wQTGFx96iXU9lOUk7eLuzOPY/zwtonHWWhPxPTkpRmz9rqPSDfFJFUTGu7RR4PVn/9ZojYhcvxyWA9RgHAJQXk6Xw3Ad6M8re2P8p1JXMYwU3XrwdB04t89/1O/w1cDnyilFU=")
+	if err != nil {
+		// gets this server down temporarily
+		log.Fatalf("Failed to create LINE bot client: %v", err)
+	}
+
+	bot = &LineBot{
+		Client:      lbot,
+		AccessToken: "KD0gyMj2tlmgrf7sqvlVrsVS4QBKKIeKYfpaV4wQTGFx96iXU9lOUk7eLuzOPY/zwtonHWWhPxPTkpRmz9rqPSDfFJFUTGu7RR4PVn/9ZojYhcvxyWA9RgHAJQXk6Xw3Ad6M8re2P8p1JXMYwU3XrwdB04t89/1O/w1cDnyilFU=",
+	}
+}
+
+func GetBot() *LineBot {
+	return bot
 }
