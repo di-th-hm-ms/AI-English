@@ -37,18 +37,22 @@ func main() {
 		}
 	}()
 
+	isProd := os.Getenv("PRODUCTION") != ""
 	// Create a new client for messaging API
 	// for deploy
-	// bot = lib.NewLineBotClient()
-	// for debug
-	lib.InitializeLinebotDebug()
+	if isProd {
+		log.Println("PRODUCTION")
+		lib.NewLineBotClient()
+	} else {
+		lib.InitializeLinebotDebug()
+	}
 	bot = lib.GetBot()
 
 	log.Println("Success creating a new instance for line bot")
 	log.Println(bot)
 
 	// Initialize s3 client
-	if os.Getenv("PRODUCTION") == "yes" {
+	if isProd {
 		lib.CreateSessionWithRole()
 	} else {
 		lib.CreateSession()
@@ -102,7 +106,7 @@ func main() {
 		lib.LogWebhookInfo(c, http.StatusOK)
 	})
 
-	go lib.RefreshTokenPeriodically(bot, time.Hour)
+	go lib.RefreshTokenPeriodically(time.Hour)
 
 	port := os.Getenv("PORT")
 	if port == "" {

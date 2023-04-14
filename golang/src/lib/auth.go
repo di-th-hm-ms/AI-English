@@ -220,7 +220,7 @@ func VerifyAccessToken(accessToken string) (map[string]interface{}, error) {
 // revoke the access token
 
 // Update the access token not in .env but in struct
-func NewLineBotClient() *LineBot {
+func NewLineBotClient() {
 	secret := os.Getenv("CHANNEL_SECRET")
 
 	accessToken, err := GetNewAccessToken()
@@ -228,30 +228,7 @@ func NewLineBotClient() *LineBot {
 		log.Println("error while generating a new access token: " + err.Error())
 	}
 
-	bot, err := linebot.New(secret, accessToken)
-	if err != nil {
-		// gets this server down temporarily
-		log.Fatalf("Failed to create LINE bot client: %v", err)
-	}
-
-	return &LineBot{
-		Client:      bot,
-		AccessToken: accessToken,
-	}
-}
-
-// refresh an access token periodically
-func RefreshTokenPeriodically(bot *LineBot, interval time.Duration) {
-	for {
-		time.Sleep(interval)
-		bot = NewLineBotClient()
-		log.Println(bot.AccessToken)
-	}
-}
-
-// for debug
-func InitializeLinebotDebug() {
-	lbot, err := linebot.New(os.Getenv("CHANNEL_SECRET"), "KD0gyMj2tlmgrf7sqvlVrsVS4QBKKIeKYfpaV4wQTGFx96iXU9lOUk7eLuzOPY/zwtonHWWhPxPTkpRmz9rqPSDfFJFUTGu7RR4PVn/9ZojYhcvxyWA9RgHAJQXk6Xw3Ad6M8re2P8p1JXMYwU3XrwdB04t89/1O/w1cDnyilFU=")
+	lbot, err := linebot.New(secret, accessToken)
 	if err != nil {
 		// gets this server down temporarily
 		log.Fatalf("Failed to create LINE bot client: %v", err)
@@ -259,7 +236,30 @@ func InitializeLinebotDebug() {
 
 	bot = &LineBot{
 		Client:      lbot,
-		AccessToken: "KD0gyMj2tlmgrf7sqvlVrsVS4QBKKIeKYfpaV4wQTGFx96iXU9lOUk7eLuzOPY/zwtonHWWhPxPTkpRmz9rqPSDfFJFUTGu7RR4PVn/9ZojYhcvxyWA9RgHAJQXk6Xw3Ad6M8re2P8p1JXMYwU3XrwdB04t89/1O/w1cDnyilFU=",
+		AccessToken: accessToken,
+	}
+}
+
+// refresh an access token periodically
+func RefreshTokenPeriodically(interval time.Duration) {
+	for {
+		time.Sleep(interval)
+		NewLineBotClient()
+		log.Println(bot.AccessToken)
+	}
+}
+
+// for debug
+func InitializeLinebotDebug() {
+	lbot, err := linebot.New(os.Getenv("CHANNEL_SECRET"), os.Getenv("CHANNEL_LONG_TERM_ACCESS_TOKEN"))
+	if err != nil {
+		// gets this server down temporarily
+		log.Fatalf("Failed to create LINE bot client: %v", err)
+	}
+
+	bot = &LineBot{
+		Client:      lbot,
+		AccessToken: os.Getenv("CHANNEL_LONG_TERM_ACCESS_TOKEN"),
 	}
 }
 
