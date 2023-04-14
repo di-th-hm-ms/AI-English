@@ -1,0 +1,5 @@
+FROM golang:1.19
+RUN apt update
+WORKDIR /go/src
+
+CMD ["go", "main.go"]
