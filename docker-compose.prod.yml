@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  go:
+    container_name: go-container
+    build:
+      context: ./golang
+      dockerfile: Dockerfile.prod
+    env_file:
+      - .env.prod
+    ports:
+      - 8080:8080
+      # - 8081:8081
+    tty: true
+    volumes:
+      - type: bind
+        source: ./golang/src
+        target: /go/src
+ 
