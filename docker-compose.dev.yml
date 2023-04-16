@@ -7,7 +7,7 @@ services:
       context: ./golang
       dockerfile: Dockerfile.dev
     env_file:
-      - .env.dev
+      - .env
     # environment:
     #   - CHANNEL_ID
     #   - CHANNEL_SECRET

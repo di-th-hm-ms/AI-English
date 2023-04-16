@@ -12,6 +12,7 @@ import (
 
 	"github.com/di-th-hm-ms/AI-English/lib"
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 	"github.com/line/line-bot-sdk-go/linebot"
 )
 
@@ -26,6 +27,17 @@ type Job struct {
 }
 
 func main() {
+
+	// Load .env file
+	err := godotenv.Load("../../.env")
+	if err != nil {
+		log.Println("Error loading .env file")
+	}
+	err = godotenv.Load("./.env")
+	if err != nil {
+		log.Println("Error loading .env file for prod")
+	}
+
 	// set up log retention
 	maxAgeDays := 1
 	go func() {
