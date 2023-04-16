@@ -110,7 +110,17 @@ func main() {
 
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		if isProd {
+			port = "443" // Default port for HTTPS
+		} else {
+			port = "8080" // Default port for dev
+		}
 	}
-	router.Run(":" + port)
+
+	if isProd {
+		router.RunTLS(":"+port, "", "")
+	} else {
+		// Dev
+		router.Run(":" + port)
+	}
 }
