@@ -29,21 +29,7 @@ type LineBot struct {
 var bot *LineBot
 
 // To generate JWT assertion
-var privateKeyJSON = []byte(fmt.Sprintf(`{
-	"alg": "%s",
-	"d": "%s",
-	"dp": "%s",
-	"dq": "%s",
-	"e": "%s",
-	"kty": "%s",
-	"n": "%s",
-	"p": "%s",
-	"q": "%s",
-	"qi": "%s"
-  }`, os.Getenv("P_ALG"), os.Getenv("P_D"),
-	os.Getenv("P_DP"), os.Getenv("P_DQ"),
-	os.Getenv("P_E"), os.Getenv("P_KTY"), os.Getenv("P_N"),
-	os.Getenv("P_P"), os.Getenv("P_Q"), os.Getenv("P_QI")))
+var privateKeyJSON []byte
 
 func base64ToBigInt(base64String string) (*big.Int, error) {
 	decoded, err := base64.RawURLEncoding.DecodeString(base64String)
@@ -57,6 +43,23 @@ func base64ToBigInt(base64String string) (*big.Int, error) {
 func GenerateJwtAssertion() (string, error) {
 	// var privateKey *rsa.PrivateKey
 	var privateKeyMap map[string]string
+
+	privateKeyJSON = []byte(fmt.Sprintf(`{
+		"alg": "%s",
+		"d": "%s",
+		"dp": "%s",
+		"dq": "%s",
+		"e": "%s",
+		"kty": "%s",
+		"n": "%s",
+		"p": "%s",
+		"q": "%s",
+		"qi": "%s"
+	  }`, os.Getenv("P_ALG"), os.Getenv("P_D"),
+		os.Getenv("P_DP"), os.Getenv("P_DQ"),
+		os.Getenv("P_E"), os.Getenv("P_KTY"), os.Getenv("P_N"),
+		os.Getenv("P_P"), os.Getenv("P_Q"), os.Getenv("P_QI")))
+
 	err := json.Unmarshal(privateKeyJSON, &privateKeyMap)
 	// log.Println(privateKeyJSON)
 	if err != nil {
